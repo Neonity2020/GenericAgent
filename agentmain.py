@@ -10,7 +10,8 @@ from llmcore import reload_mykeys, ToolClient, MixinSession, NativeToolClient, N
 from agent_loop import agent_runner_loop
 try:
     from plugins.hooks import discover_and_load; discover_and_load()
-except Exception: pass
+except Exception as e:
+    print(f'[WARN] Plugin discovery failed: {e}')
 from ga import GenericAgentHandler, smart_format, get_global_memory, format_error, consume_file
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -66,14 +67,15 @@ class GenericAgent:
         mykeys, changed = reload_mykeys()
         if not changed and hasattr(self, 'llmclients'): return
         try: oldhistory = self.llmclient.backend.history
-        except: oldhistory = None
+        except (AttributeError, TypeError): oldhistory = None
         llm_sessions = []
         for k, cfg in mykeys.items():
             if not any(x in k for x in ['api', 'config', 'cookie']): continue
             try:
                 if 'mixin' in k: llm_sessions += [{'mixin_cfg': cfg}]
                 elif c := resolve_client(k): llm_sessions += [c]
-            except: pass
+            except Exception as e:
+                print(f'[WARN] Failed to resolve LLM client for {k}: {e}')
         for i, s in enumerate(llm_sessions):
             if isinstance(s, dict) and 'mixin_cfg' in s:
                 try:
@@ -91,7 +93,7 @@ class GenericAgent:
         lastc = self.llmclient
         self.llmclient = self.llmclients[self.llm_no]
         try: self.llmclient.backend.history = lastc.backend.history
-        except: raise Exception('[ERROR] BAD Mixin config: Check your mykey.py')
+        except (AttributeError, TypeError): raise Exception('[ERROR] BAD Mixin config: Check your mykey.py')
         self.llmclient.last_tools = ''
         name = self.get_llm_name(model=True)
         if 'glm' in name or 'minimax' in name or 'kimi' in name: load_tool_schema('_cn')

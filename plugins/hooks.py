@@ -1,6 +1,7 @@
 import os
 import sys
 import importlib
+import traceback
 
 # 模块级注册表: event_name -> [callback, ...]
 _registry = {}
@@ -22,6 +23,7 @@ def trigger(event, ctx: dict):
                 ctx = r
         except Exception as e:
             sys.stderr.write(f"[hooks] {event} callback error: {e}\n")
+            traceback.print_exc(file=sys.stderr)
     return ctx
 
 
@@ -64,4 +66,5 @@ def load(name):
         return True
     except Exception as e:
         sys.stderr.write(f"[hooks] plugin '{name}' load failed: {e}\n")
+        traceback.print_exc(file=sys.stderr)
         return False

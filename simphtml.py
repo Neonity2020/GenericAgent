@@ -1,5 +1,7 @@
 try: from bs4 import BeautifulSoup
-except ImportError: print("[Error] BeautifulSoup4 未安装，请叫Agent安装BeautifulSoup4，再使用web相关工具。")
+except ImportError:
+    BeautifulSoup = None
+    print("[Error] BeautifulSoup4 未安装，请叫Agent安装BeautifulSoup4，再使用web相关工具。")
 
 js_optHTML = r'''function optHTML(text_only=false) {
 function createEnhancedDOMCopy() {  
