@@ -54,7 +54,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Conductor", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+_CONDUCTOR_CORS_ORIGINS = os.environ.get("GA_CORS_ORIGINS", "").split(",") if os.environ.get("GA_CORS_ORIGINS") else [
+    f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}",
+]
+app.add_middleware(CORSMiddleware, allow_origins=_CONDUCTOR_CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 
 class ChatIn(BaseModel):
     msg: str

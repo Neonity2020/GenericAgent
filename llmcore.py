@@ -1,6 +1,8 @@
 import os, json, re, time, requests, sys, threading, urllib3, base64, importlib, uuid, pathlib
 from datetime import datetime
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# NOTE: TLS warnings are intentionally NOT suppressed globally.
+# If you need to disable TLS verification for a specific proxy/relay, set
+# verify=False on individual requests and suppress warnings locally.
 _RESP_CACHE_KEY = str(uuid.uuid4()); _RESP_CODEX_KEY = str(uuid.uuid4())
 _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path: sys.path.append(_ROOT)

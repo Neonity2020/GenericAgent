@@ -1178,9 +1178,20 @@ async def ws_handler(request):
 # Transport layer: HTTP command/data API
 # ---------------------------------------------------------------------------
 
-def cors_headers():
+_BRIDGE_ALLOWED_ORIGINS = os.environ.get("GA_CORS_ORIGINS", "").split(",") if os.environ.get("GA_CORS_ORIGINS") else None
+
+
+def cors_headers(request=None):
+    origin = None
+    if request:
+        origin = request.headers.get("Origin", "")
+    if _BRIDGE_ALLOWED_ORIGINS:
+        allowed = origin if origin in _BRIDGE_ALLOWED_ORIGINS else _BRIDGE_ALLOWED_ORIGINS[0]
+    else:
+        # Default: allow only localhost origins (desktop app is always local)
+        allowed = origin if origin and ("127.0.0.1" in origin or "localhost" in origin) else "http://127.0.0.1:14168"
     return {
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": allowed,
         "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
     }
@@ -1189,9 +1200,9 @@ def cors_headers():
 @web.middleware
 async def cors_middleware(request, handler):
     if request.method == "OPTIONS":
-        return web.Response(status=204, headers=cors_headers())
+        return web.Response(status=204, headers=cors_headers(request))
     resp = await handler(request)
-    for k, v in cors_headers().items():
+    for k, v in cors_headers(request).items():
         resp.headers[k] = v
     return resp
 

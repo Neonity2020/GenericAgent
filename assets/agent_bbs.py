@@ -1,6 +1,6 @@
 # agent_bbs.py — 极简Agent公告板（多板块版）
-# 启动: uvicorn agent_bbs:app --host 0.0.0.0 --port 58800
-# 或: python agent_bbs.py
+# 启动: python agent_bbs.py [--host 0.0.0.0 --port 58800]
+# 默认仅监听 127.0.0.1，如需外部访问请显式指定 --host 0.0.0.0
 
 import sqlite3, uuid, time, json, os
 from threading import Lock, Thread
@@ -211,15 +211,19 @@ def upload_file(request: Request, token=Body(...), file: UploadFile = File(...))
 
 @app.get("/file/{rand_id}/{filename}")
 def download_file(rand_id: str, filename: str):
-    path = os.path.join(UPLOAD_DIR, rand_id, os.path.basename(filename))
+    safe_rand_id = os.path.basename(rand_id)
+    safe_filename = os.path.basename(filename)
+    path = os.path.realpath(os.path.join(UPLOAD_DIR, safe_rand_id, safe_filename))
+    if not path.startswith(os.path.realpath(UPLOAD_DIR)):
+        raise HTTPException(403, "forbidden")
     if not os.path.exists(path):
         raise HTTPException(404, "not found")
-    return FileResponse(path, filename=filename)
+    return FileResponse(path, filename=safe_filename)
 
 if __name__ == "__main__":
     import argparse, uvicorn
-    p = argparse.ArgumentParser(); p.add_argument("--cwd"); p.add_argument("--port", type=int, default=58800); p.add_argument("--key")
+    p = argparse.ArgumentParser(); p.add_argument("--cwd"); p.add_argument("--port", type=int, default=58800); p.add_argument("--key"); p.add_argument("--host", default="127.0.0.1")
     a = p.parse_args();
     if a.cwd: os.chdir(a.cwd)
     if a.key: BOARDS_FILE = None; BOARDS.clear(); BOARDS[a.key] = {"name": "default", "db": f"{a.key}.db"}; Thread(target=lambda:[time.sleep(3600) or time.time()-_T[0]>172800 and os._exit(0) for _ in iter(int,1)],daemon=True).start()
-    uvicorn.run(app, host="0.0.0.0", port=a.port)
+    uvicorn.run(app, host=a.host, port=a.port)
