@@ -3,7 +3,7 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agentmain import GeneraticAgent
-from chatapp_common import AgentChatMixin, ensure_single_instance, public_access, redirect_log, require_runtime, split_text
+from chatapp_common import AgentChatMixin, build_allowed_set, ensure_single_instance, public_access, reconnect_loop, redirect_log, require_runtime, split_text
 from llmcore import mykeys
 
 try:
@@ -16,7 +16,7 @@ except Exception:
 agent = GeneraticAgent(); agent.verbose = False
 CLIENT_ID = str(mykeys.get("dingtalk_client_id", "") or "").strip()
 CLIENT_SECRET = str(mykeys.get("dingtalk_client_secret", "") or "").strip()
-ALLOWED = {str(x).strip() for x in mykeys.get("dingtalk_allowed_users", []) if str(x).strip()}
+ALLOWED = build_allowed_set(mykeys.get("dingtalk_allowed_users", []))
 USER_TASKS = {}
 
 
@@ -107,19 +107,7 @@ class DingTalkApp(AgentChatMixin):
         self.client = DingTalkStreamClient(Credential(CLIENT_ID, CLIENT_SECRET))
         self.client.register_callback_handler(ChatbotMessage.TOPIC, _DingTalkHandler(self))
         print("[DingTalk] bot starting...")
-        delay, max_delay = 5, 300
-        while True:
-            started_at = time.monotonic()
-            try:
-                await self.client.start()
-            except Exception as e:
-                print(f"[DingTalk] stream error: {e}")
-            # any session that lived >=60s is treated as healthy -> reset backoff
-            if time.monotonic() - started_at >= 60:
-                delay = 5
-            print(f"[DingTalk] reconnect in {delay}s...")
-            await asyncio.sleep(delay)
-            delay = min(delay * 2, max_delay)
+        await reconnect_loop(self.client.start, "DingTalk")
 
 
 class _DingTalkHandler(CallbackHandler):

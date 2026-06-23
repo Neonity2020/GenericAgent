@@ -16,6 +16,7 @@ from chatapp_common import (
     FILE_HINT,
     HELP_TEXT,
     TELEGRAM_MENU_COMMANDS,
+    build_allowed_set,
     clean_reply,
     ensure_single_instance,
     extract_files,
@@ -32,7 +33,7 @@ from llmcore import mykeys
 agent = GeneraticAgent()
 agent.verbose = False
 agent.inc_out = True
-ALLOWED = set(mykeys.get('tg_allowed_users', []))
+ALLOWED = build_allowed_set(mykeys.get('tg_allowed_users', []))
 
 _DRAFT_HINT = "thinking..."
 _STREAM_SUFFIX = " ⏳"

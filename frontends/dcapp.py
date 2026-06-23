@@ -9,10 +9,10 @@ from collections import OrderedDict
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agentmain import GeneraticAgent
 from chatapp_common import (
-    AgentChatMixin, build_done_text, ensure_single_instance, extract_files,
-    public_access, redirect_log, require_runtime, split_text, strip_files, clean_reply,
-    HELP_TEXT, FILE_HINT, format_restore,
-    _handle_continue_frontend, _reset_conversation,
+    AgentChatMixin, build_allowed_set, build_done_text, ensure_single_instance,
+    extract_files, extract_summary, public_access, reconnect_loop, redirect_log,
+    require_runtime, split_text, strip_files, clean_reply,
+    HELP_TEXT, FILE_HINT,
 )
 from llmcore import mykeys
 
@@ -24,7 +24,7 @@ except Exception:
 
 agent = GeneraticAgent(); agent.verbose = False
 BOT_TOKEN = str(mykeys.get("discord_bot_token", "") or "").strip()
-ALLOWED = {str(x).strip() for x in mykeys.get("discord_allowed_users", []) if str(x).strip()}
+ALLOWED = build_allowed_set(mykeys.get("discord_allowed_users", []))
 USER_TASKS = {}
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMP_DIR = os.path.join(PROJECT_ROOT, "temp")
@@ -37,12 +37,7 @@ os.makedirs(MEDIA_DIR, exist_ok=True)
 
 
 def _extract_discord_progress(text):
-    """Return the newest concise <summary> from a streaming transcript."""
-    matches = re.findall(r"<summary>\s*(.*?)\s*</summary>", text or "", flags=re.DOTALL)
-    if not matches:
-        return ""
-    summary = re.sub(r"\s+", " ", matches[-1]).strip()
-    return summary[:120]
+    return extract_summary(text, limit=120)
 
 
 def _strip_discord_transcript(text):
@@ -236,49 +231,7 @@ class DiscordApp(AgentChatMixin):
         if not body and not files:
             await self.send_text(chat_id, "...", **ctx)
 
-    async def handle_command(self, chat_id, cmd, **ctx):
-        """Handle slash commands against the per-chat agent, keeping Discord chats isolated."""
-        ga = self._get_agent(chat_id)
-        parts = (cmd or "").split()
-        op = (parts[0] if parts else "").lower()
-        if op == "/help":
-            return await self.send_text(chat_id, HELP_TEXT, **ctx)
-        if op == "/stop":
-            state = self.user_tasks.get(chat_id)
-            if state:
-                state["running"] = False
-            ga.abort()
-            return await self.send_text(chat_id, "⏹️ 正在停止...", **ctx)
-        if op == "/status":
-            llm = ga.get_llm_name() if ga.llmclient else "未配置"
-            return await self.send_text(chat_id, f"状态: {'🔴 运行中' if ga.is_running else '🟢 空闲'}\nLLM: [{ga.llm_no}] {llm}", **ctx)
-        if op == "/llm":
-            if not ga.llmclient:
-                return await self.send_text(chat_id, "❌ 当前没有可用的 LLM 配置", **ctx)
-            if len(parts) > 1:
-                try:
-                    ga.next_llm(int(parts[1]))
-                    return await self.send_text(chat_id, f"✅ 已切换到 [{ga.llm_no}] {ga.get_llm_name()}", **ctx)
-                except Exception:
-                    return await self.send_text(chat_id, f"用法: /llm <0-{len(ga.list_llms()) - 1}>", **ctx)
-            lines = [f"{'→' if cur else '  '} [{i}] {name}" for i, name, cur in ga.list_llms()]
-            return await self.send_text(chat_id, "LLMs:\n" + "\n".join(lines), **ctx)
-        if op == "/restore":
-            try:
-                restored_info, err = format_restore()
-                if err:
-                    return await self.send_text(chat_id, err, **ctx)
-                restored, fname, count = restored_info
-                ga.abort()
-                ga.history.extend(restored)
-                return await self.send_text(chat_id, f"✅ 已恢复 {count} 轮对话\n来源: {fname}\n(仅恢复上下文，请输入新问题继续)", **ctx)
-            except Exception as e:
-                return await self.send_text(chat_id, f"❌ 恢复失败: {e}", **ctx)
-        if op == "/continue":
-            return await self.send_text(chat_id, _handle_continue_frontend(ga, cmd), **ctx)
-        if op == "/new":
-            return await self.send_text(chat_id, _reset_conversation(ga), **ctx)
-        return await self.send_text(chat_id, HELP_TEXT, **ctx)
+
 
     async def run_agent(self, chat_id, text, **ctx):
         """Run the isolated per-chat Discord agent."""
@@ -386,18 +339,7 @@ class DiscordApp(AgentChatMixin):
 
     async def start(self):
         print("[Discord] bot starting...")
-        delay, max_delay = 5, 300
-        while True:
-            started_at = time.monotonic()
-            try:
-                await self.client.start(BOT_TOKEN)
-            except Exception as e:
-                print(f"[Discord] error: {e}")
-            if time.monotonic() - started_at >= 60:
-                delay = 5
-            print(f"[Discord] reconnect in {delay}s...")
-            await asyncio.sleep(delay)
-            delay = min(delay * 2, max_delay)
+        await reconnect_loop(lambda: self.client.start(BOT_TOKEN), "Discord")
 
 
 if __name__ == "__main__":

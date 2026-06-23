@@ -209,6 +209,38 @@ def build_done_text(raw_text):
     return body or "..."
 
 
+def extract_summary(text, limit=120):
+    """Extract the last <summary> tag content from streaming transcript text."""
+    matches = re.findall(r"<summary>\s*(.*?)\s*</summary>", text or "", flags=re.DOTALL)
+    if not matches:
+        return ""
+    summary = re.sub(r"\s+", " ", matches[-1]).strip()
+    return summary[:limit] if len(summary) > limit else summary
+
+
+def build_allowed_set(mykeys_value):
+    """Build a set of allowed user IDs from a mykeys config value (list or None)."""
+    if not mykeys_value:
+        return set()
+    return {str(x).strip() for x in mykeys_value if str(x).strip()}
+
+
+async def reconnect_loop(start_fn, label, initial_delay=5, max_delay=300):
+    """Run start_fn in a loop with exponential backoff on failure."""
+    delay = initial_delay
+    while True:
+        started_at = time.time()
+        try:
+            await start_fn()
+        except Exception as e:
+            print(f"[{label}] error: {e}")
+        if time.time() - started_at >= 60:
+            delay = initial_delay
+        print(f"[{label}] reconnect in {delay}s...")
+        await asyncio.sleep(delay)
+        delay = min(delay * 2, max_delay)
+
+
 def public_access(allowed):
     return not allowed or "*" in allowed
 
@@ -269,7 +301,12 @@ class AgentChatMixin:
     async def send_done(self, chat_id, raw_text, **ctx):
         await self.send_text(chat_id, build_done_text(raw_text), **ctx)
 
+    def _get_agent(self, chat_id=None):
+        """Return the agent instance for a given chat. Override for per-chat isolation."""
+        return self.agent
+
     async def handle_command(self, chat_id, cmd, **ctx):
+        ga = self._get_agent(chat_id)
         parts = (cmd or "").split()
         op = (parts[0] if parts else "").lower()
         if op == "/help":
@@ -278,21 +315,21 @@ class AgentChatMixin:
             state = self.user_tasks.get(chat_id)
             if state:
                 state["running"] = False
-            self.agent.abort()
+            ga.abort()
             return await self.send_text(chat_id, "⏹️ 正在停止...", **ctx)
         if op == "/status":
-            llm = self.agent.get_llm_name() if self.agent.llmclient else "未配置"
-            return await self.send_text(chat_id, f"状态: {'🔴 运行中' if self.agent.is_running else '🟢 空闲'}\nLLM: [{self.agent.llm_no}] {llm}", **ctx)
+            llm = ga.get_llm_name() if ga.llmclient else "未配置"
+            return await self.send_text(chat_id, f"状态: {'🔴 运行中' if ga.is_running else '🟢 空闲'}\nLLM: [{ga.llm_no}] {llm}", **ctx)
         if op == "/llm":
-            if not self.agent.llmclient:
+            if not ga.llmclient:
                 return await self.send_text(chat_id, "❌ 当前没有可用的 LLM 配置", **ctx)
             if len(parts) > 1:
                 try:
-                    self.agent.next_llm(int(parts[1]))
-                    return await self.send_text(chat_id, f"✅ 已切换到 [{self.agent.llm_no}] {self.agent.get_llm_name()}", **ctx)
+                    ga.next_llm(int(parts[1]))
+                    return await self.send_text(chat_id, f"✅ 已切换到 [{ga.llm_no}] {ga.get_llm_name()}", **ctx)
                 except Exception:
-                    return await self.send_text(chat_id, f"用法: /llm <0-{len(self.agent.list_llms()) - 1}>", **ctx)
-            lines = [f"{'→' if cur else '  '} [{i}] {name}" for i, name, cur in self.agent.list_llms()]
+                    return await self.send_text(chat_id, f"用法: /llm <0-{len(ga.list_llms()) - 1}>", **ctx)
+            lines = [f"{'→' if cur else '  '} [{i}] {name}" for i, name, cur in ga.list_llms()]
             return await self.send_text(chat_id, "LLMs:\n" + "\n".join(lines), **ctx)
         if op == "/restore":
             try:
@@ -300,17 +337,17 @@ class AgentChatMixin:
                 if err:
                     return await self.send_text(chat_id, err, **ctx)
                 restored, fname, count = restored_info
-                self.agent.abort()
-                self.agent.history.extend(restored)
+                ga.abort()
+                ga.history.extend(restored)
                 return await self.send_text(chat_id, f"✅ 已恢复 {count} 轮对话\n来源: {fname}\n(仅恢复上下文，请输入新问题继续)", **ctx)
             except Exception as e:
                 return await self.send_text(chat_id, f"❌ 恢复失败: {e}", **ctx)
         if op == "/continue":
-            return await self.send_text(chat_id, _handle_continue_frontend(self.agent, cmd), **ctx)
+            return await self.send_text(chat_id, _handle_continue_frontend(ga, cmd), **ctx)
         if op == "/new":
-            return await self.send_text(chat_id, _reset_conversation(self.agent), **ctx)
+            return await self.send_text(chat_id, _reset_conversation(ga), **ctx)
         if op == "/btw":
-            answer = await asyncio.to_thread(_handle_btw_frontend, self.agent, cmd)
+            answer = await asyncio.to_thread(_handle_btw_frontend, ga, cmd)
             return await self.send_text(chat_id, answer, **ctx)
         if op == "/review":
             return await self.run_agent(chat_id, cmd, **ctx)

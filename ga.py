@@ -7,11 +7,8 @@ if sys.stderr is None: sys.stderr = open(os.devnull, "w")
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from agent_loop import BaseHandler, StepOutcome, json_default
+from llmcore import safeprint as safe_print
 script_dir = os.path.dirname(os.path.abspath(__file__))
-
-def safe_print(*args, **kwargs):
-    try: print(*args, **kwargs)
-    except Exception: pass
 
 def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop_signal=None, maxlen=10000, myprint=safe_print):
     """代码执行器

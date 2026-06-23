@@ -3,7 +3,7 @@ from collections import deque
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agentmain import GeneraticAgent
-from chatapp_common import AgentChatMixin, ensure_single_instance, public_access, redirect_log, require_runtime, split_text
+from chatapp_common import AgentChatMixin, build_allowed_set, ensure_single_instance, public_access, reconnect_loop, redirect_log, require_runtime, split_text
 from llmcore import mykeys
 
 try:
@@ -16,7 +16,7 @@ except Exception:
 agent = GeneraticAgent(); agent.verbose = False
 APP_ID = str(mykeys.get("qq_app_id", "") or "").strip()
 APP_SECRET = str(mykeys.get("qq_app_secret", "") or "").strip()
-ALLOWED = {str(x).strip() for x in mykeys.get("qq_allowed_users", []) if str(x).strip()}
+ALLOWED = build_allowed_set(mykeys.get("qq_allowed_users", []))
 PROCESSED_IDS, USER_TASKS = deque(maxlen=1000), {}
 SEQ_LOCK, MSG_SEQ = threading.Lock(), 1
 
@@ -107,19 +107,8 @@ class QQApp(AgentChatMixin):
 
     async def start(self):
         self.client = _make_bot_class(self)()
-        delay, max_delay = 5, 300
-        while True:
-            started_at = time.monotonic()
-            try:
-                print(f"[QQ] bot starting... {time.strftime('%m-%d %H:%M')}")
-                await self.client.start(appid=APP_ID, secret=APP_SECRET)
-            except Exception as e:
-                print(f"[QQ] bot error: {e}")
-            if time.monotonic() - started_at >= 60:
-                delay = 5
-            print(f"[QQ] reconnect in {delay}s...")
-            await asyncio.sleep(delay)
-            delay = min(delay * 2, max_delay)
+        print(f"[QQ] bot starting... {time.strftime('%m-%d %H:%M')}")
+        await reconnect_loop(lambda: self.client.start(appid=APP_ID, secret=APP_SECRET), "QQ")
 
 
 if __name__ == "__main__":

@@ -17,8 +17,8 @@ TurnHookFn = Callable[[TurnContext], None]
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agentmain import GeneraticAgent
-from chatapp_common import (AgentChatMixin, FILE_HINT, build_done_text, clean_reply,
-                            ensure_single_instance, extract_files, public_access,
+from chatapp_common import (AgentChatMixin, FILE_HINT, build_allowed_set, build_done_text,
+                            clean_reply, ensure_single_instance, extract_files, public_access,
                             redirect_log, require_runtime, split_text, strip_files)
 from llmcore import mykeys
 
@@ -32,7 +32,7 @@ except Exception:
 BOT_ID    = str(mykeys.get("wecom_bot_id", "") or "").strip()
 SECRET    = str(mykeys.get("wecom_secret", "") or "").strip()
 WELCOME   = str(mykeys.get("wecom_welcome_message", "") or "").strip()
-ALLOWED   = {str(x).strip() for x in mykeys.get("wecom_allowed_users", []) if str(x).strip()}
+ALLOWED   = build_allowed_set(mykeys.get("wecom_allowed_users", []))
 PORT      = 19531                # single-instance lock port
 TEMP_DIR  = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "temp")
 MEDIA_DIR = os.path.join(TEMP_DIR, "media")

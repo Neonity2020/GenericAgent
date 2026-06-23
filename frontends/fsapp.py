@@ -79,9 +79,10 @@ def _ensure_runtime_paths():
 
 _ensure_runtime_paths()
 from agentmain import GeneraticAgent
-from frontends.chatapp_common import AgentChatMixin, FILE_HINT, split_text
-
-_TAG_PATS = [r"<" + t + r">.*?</" + t + r">" for t in ("thinking", "summary", "tool_use", "file_content")]
+from frontends.chatapp_common import (
+    AgentChatMixin, FILE_HINT, build_allowed_set, clean_reply, extract_files,
+    split_text, strip_files, to_allowed_set,
+)
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico", ".tiff", ".tif"}
 _AUDIO_EXTS = {".opus", ".mp3", ".wav", ".m4a", ".aac"}
 _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
@@ -128,34 +129,16 @@ def _claim_message_once(message_id):
         return True
 
 
-def _clean(text):
-    for pat in _TAG_PATS:
-        text = re.sub(pat, "", text or "", flags=re.DOTALL)
-    return re.sub(r"\n{3,}", "\n\n", text).strip()
-
-
-def _extract_files(text):
-    return re.findall(r"\[FILE:([^\]]+)\]", text or "")
-
-
-def _strip_files(text):
-    return re.sub(r"\[FILE:[^\]]+\]", "", text or "").strip()
-
 
 def _display_text(text):
-    cleaned = _strip_files(_clean(text))
-    if cleaned:
+    cleaned = strip_files(clean_reply(text))
+    if cleaned and cleaned != "...":
         return cleaned
     tail = (text or "").strip()[-_TRUNC_TAIL:]
     return "⚠️ 模型输出被截断或为空" + (f"\n…{tail}" if tail else "")
 
 
-def _to_allowed_set(value):
-    if value is None:
-        return set()
-    if isinstance(value, str):
-        value = [value]
-    return {str(x).strip() for x in value if str(x).strip()}
+_to_allowed_set = to_allowed_set
 
 
 def _parse_json(raw):
@@ -573,7 +556,7 @@ def _send_local_file(receive_id, file_path, receive_id_type="open_id"):
 
 
 def _send_generated_files(receive_id, raw_text, receive_id_type="open_id"):
-    for file_path in _extract_files(raw_text):
+    for file_path in extract_files(raw_text):
         _send_local_file(receive_id, file_path, receive_id_type)
 
 
