@@ -11,7 +11,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 
 def safe_print(*args, **kwargs):
     try: print(*args, **kwargs)
-    except: pass
+    except Exception: pass
 
 def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop_signal=None, maxlen=10000, myprint=safe_print):
     """代码执行器
@@ -52,7 +52,7 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
                 except UnicodeDecodeError: line = line_bytes.decode('gbk', errors='ignore')
                 logs.append(line)
                 myprint(line, end="")
-        except: pass
+        except Exception: pass
 
     try:
         process = subprocess.Popen(
@@ -92,7 +92,7 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
         }
     except Exception as e:
         if 'process' in locals(): process.kill()
-        return {"status": "error", "msg": str(e)}
+        return {"status": "error", "msg": format_error(e)}
     finally:
         if code_type == "python" and tmp_path and os.path.exists(tmp_path): os.remove(tmp_path)
 
@@ -159,7 +159,7 @@ def log_memory_access(path):
     stats_file = os.path.join(script_dir, 'memory/file_access_stats.json')
     try:
         with open(stats_file, 'r', encoding='utf-8') as f: stats = json.load(f)
-    except: stats = {}
+    except (FileNotFoundError, json.JSONDecodeError, ValueError): stats = {}
     fname = os.path.basename(path)
     stats[fname] = {'count': stats.get(fname, {}).get('count', 0) + 1, 'last': datetime.now().strftime('%Y-%m-%d')}
     with open(stats_file, 'w', encoding='utf-8') as f: json.dump(stats, f, indent=2, ensure_ascii=False)
@@ -202,7 +202,7 @@ def file_patch(path: str, old_content: str, new_content: str):
         updated_text = full_text.replace(old_content, new_content)
         with open(path, 'w', encoding='utf-8') as f: f.write(updated_text)
         return {"status": "success", "msg": "文件局部修改成功"}
-    except Exception as e: return {"status": "error", "msg": str(e)}
+    except Exception as e: return {"status": "error", "msg": format_error(e)}
 
 _read_dirs = set()
 def _scan_files(base, depth=2):
@@ -247,7 +247,8 @@ def file_read(path, start=1, keyword=None, count=200, show_linenos=True):
             top = sorted([(difflib.SequenceMatcher(None, tgt.lower(), c[0].lower()).ratio(), c) for c in cands[:2000]], key=lambda x: -x[0])[:5]
             top = [(s, c) for s, c in top if s > 0.3]
             if top: msg += "\n\nDid you mean:\n" + "\n".join(f"  {c[1]}  ({s:.0%})" for s, c in top)
-        except Exception: pass
+        except Exception as e:
+            print(f"[WARN] file suggestion scan failed: {e}")
         return msg
     except Exception as e: return f"Error: {str(e)}"
 
@@ -290,7 +291,7 @@ class GenericAgentHandler(BaseHandler):
             code = self._extract_code_block(response, code_type)
             if not code: return StepOutcome("[Error] Code missing. Must use reply code block or 'script' arg.", next_prompt="\n")
         try: timeout = int(args.get("timeout", 60))
-        except: timeout = 60
+        except (ValueError, TypeError): timeout = 60
         raw_path = os.path.join(self.cwd, args.get("cwd", './'))
         cwd = os.path.normpath(os.path.abspath(raw_path))
         code_cwd = os.path.normpath(self.cwd)
@@ -402,8 +403,8 @@ class GenericAgentHandler(BaseHandler):
             next_prompt = self._get_anchor_prompt(skip=args.get('_index', 0) > 0)
             return StepOutcome({"status": "success", 'writed_bytes': len(new_content)}, next_prompt=next_prompt)
         except Exception as e:
-            yield f"[Status] ❌ 写入异常: {str(e)}\n"
-            return StepOutcome({"status": "error", "msg": str(e)}, next_prompt="\n")
+            yield f"[Status] ❌ 写入异常: {format_error(e)}\n"
+            return StepOutcome({"status": "error", "msg": format_error(e)}, next_prompt="\n")
         
     def do_file_read(self, args, response):
         '''读取文件内容。从第start行开始读取。如有keyword则返回第一个keyword(忽略大小写)周边内容'''
@@ -434,7 +435,7 @@ class GenericAgentHandler(BaseHandler):
     def _check_plan_completion(self):
         if not os.path.isfile(p:=self._in_plan_mode() or ''): return None
         try: return len(re.findall(r'\[ \]', open(p, encoding='utf-8', errors='replace').read()))
-        except: return None
+        except Exception: return None
     
     def do_update_working_checkpoint(self, args, response):
         '''为整个任务设定后续需要临时记忆的重点。'''
